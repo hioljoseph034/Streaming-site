@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Kinera — Administration</title>
+<style>
+:root{--bg:#0f0d1a;--surface:#1c1932;--line:#2e2a50;--text:#f1eefb;--muted:#a09bc4;--accent:#ffc857;--live:#ff4d6d;--ok:#9fe3b5;--bad:#ff8a9f;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input,select,textarea{font:inherit;color:var(--text)}
+button{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.primary{background:var(--accent);color:#1c1932;border:0;font-weight:600}
+button:disabled{opacity:.5}
+input,select,textarea{background:#14122a;border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+textarea{min-height:70px;resize:vertical}
+input[type=color]{padding:2px;height:38px;width:64px}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+.logo{font-weight:800;font-size:20px;margin-right:auto}
+.logo i{color:var(--live);font-style:normal}
+.tabs{display:flex;gap:6px;padding:12px 18px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.tabs button[aria-selected="true"]{background:var(--accent);color:#1c1932;border:0;font-weight:600}
+main{padding:18px;max-width:1100px;margin:0 auto}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.card h3{margin:0 0 10px;font-size:16px}
+label{display:block;margin-bottom:12px;color:var(--muted);font-size:13px}
+label input,label select,label textarea{margin-top:5px;color:var(--text)}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px}
+@media(max-width:800px){.two{grid-template-columns:1fr}}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;border:1px solid transparent;margin-bottom:4px}
+.row.on{border-color:var(--accent);background:#221e40}
+.row span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acts{display:flex;gap:6px;flex:none}
+.addrow{display:flex;gap:8px;margin-top:10px}
+.addrow select{flex:1}
+.muted{color:var(--muted);font-size:13px}
+.hint{color:var(--muted);font-size:13px;margin:6px 0 0}
+#status{margin-left:0;font-size:14px;min-height:20px;color:var(--ok);width:100%}
+.fileBtn{display:inline-block}
+.fileBtn input{display:none}
+.check{display:flex;align-items:center;gap:8px;margin:6px 0;color:var(--muted)}
+.check input{width:auto}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Kinera<i>.</i> Administration</div>
+  <label class="fileBtn"><button type="button" onclick="this.nextElementSibling.click()">Charger un fichier</button><input type="file" id="fileIn" accept="application/json,.json"></label>
+  <button data-act="check">Vérifier</button>
+  <button data-act="export">Télécharger</button>
+  <button class="primary" data-act="save">Enregistrer sur GitHub</button>
+  <div id="status" role="status" aria-live="polite"></div>
+</header>
+
+<div class="tabs" role="tablist">
+  <button data-tab="gen" role="tab">Général</button>
+  <button data-tab="direct" role="tab">Direct</button>
+  <button data-tab="items" role="tab">Contenus</button>
+  <button data-tab="set" role="tab">Réglages GitHub</button>
+</div>
+
+<main id="view"></main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const GH_KEY = "kinera-admin";
+let S = {
+  cfg: { siteName: "Kinera", footer: "", live: { mode: "kinera", twitchChannel: "", title: "", grille: [] }, items: [] },
+  sel: -1, tab: "gen", dirty: false,
+  gh: JSON.parse(localStorage.getItem(GH_KEY) || "{}")
+};
+
+/* ---------- Utilitaires ---------- */
+function setPath(o, p, v){ const k = p.split("."); let x = o; k.slice(0,-1).forEach(n => x = x[n]); x[k.at(-1)] = v; }
+function status(msg, err){ $("#status").textContent = msg; $("#status").style.color = err ? "var(--bad)" : "var(--ok)"; }
+function dirty(){ S.dirty = true; status("Modifications non enregistrées."); }
+function saveGh(){
+  const copy = { ...S.gh };
+  if(!S.gh.remember) delete copy.token;
+  localStorage.setItem(GH_KEY, JSON.stringify(copy));
+}
+function b64(s){ const bytes = new TextEncoder().encode(s); let bin = ""; bytes.forEach(x => bin += String.fromCharCode(x)); return btoa(bin); }
+function unb64(s){ const bin = atob(s.replace(/\n/g, "")); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); }
+
+function problems(){
+  const p = [], ids = new Set();
+  S.cfg.items.forEach((it, i) => {
+    if(!it.id) p.push(`Contenu ${i+1} : identifiant manquant`);
+    else if(ids.has(it.id)) p.push(`Identifiant en double : ${it.id}`);
+    ids.add(it.id);
+    if(!it.title) p.push(`${it.id || i+1} : titre manquant`);
+    if(!/^https:\/\//.test(it.src || "")) p.push(`${it.id || i+1} : le lien vidéo doit commencer par https://`);
+    if(String(it.src || "").includes("VOTRE_ITEM")) p.push(`${it.id} : lien d'exemple à remplacer`);
+    if(!(it.duration > 0)) p.push(`${it.id || i+1} : durée manquante`);
+  });
+  (S.cfg.live.grille || []).forEach(id => { if(!ids.has(id)) p.push(`Grille : ${id} n'existe pas`); });
+  if(S.cfg.live.mode === "twitch" && !S.cfg.live.twitchChannel) p.push("Twitch : nom de chaîne manquant");
+  return p;
+}
+
+/* ---------- Affichage ---------- */
+function render(){
+  document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === S.tab));
+  const v = $("#view"), C = S.cfg, L = C.live;
+
+  if(S.tab === "gen"){
+    v.innerHTML = `<div class="card">
+      <label>Nom du site<input data-path="siteName" value="${esc(C.siteName)}"></label>
+      <label>Pied de page<textarea data-path="footer">${esc(C.footer)}</textarea></label>
+    </div>`;
+  }
+
+  if(S.tab === "direct"){
+    const grille = L.grille.length ? L.grille.map((id, i) => {
+      const it = C.items.find(x => x.id === id);
+      return `<div class="row"><span>${i+1}. ${esc(it ? it.title : id + " (introuvable)")}</span>
+        <span class="acts">
+          <button data-act="up" data-i="${i}" aria-label="Monter">↑</button>
+          <button data-act="down" data-i="${i}" aria-label="Descendre">↓</button>
+          <button data-act="unslot" data-i="${i}" aria-label="Retirer">✕</button>
+        </span></div>`;
+    }).join("") : '<p class="muted">La grille est vide.</p>';
+    const options = C.items.map(it => `<option value="${esc(it.id)}">${esc(it.title)}</option>`).join("");
+    v.innerHTML = `
+      <div class="card">
+        <label>Mode
+          <select data-path="live.mode">
+            <option value="kinera" ${L.mode !== "twitch" ? "selected" : ""}>Kinera (grille en boucle)</option>
+            <option value="twitch" ${L.mode === "twitch" ? "selected" : ""}>Twitch (direct depuis OBS)</option>
+          </select>
+        </label>
+        <label>Nom de chaîne Twitch<input data-path="live.twitchChannel" value="${esc(L.twitchChannel)}"></label>
+        <label>Titre affiché<input data-path="live.title" value="${esc(L.title)}"></label>
+      </div>
+      <div class="card">
+        <h3>Grille (ordre de diffusion en boucle)</h3>
+        ${grille}
+        <div class="addrow">
+          <select id="pick">${options}</select>
+          <button data-act="slot" ${C.items.length ? "" : "disabled"}>Ajouter à la grille</button>
+        </div>
+        <p class="hint">La grille se répète en boucle. Le direct ne tourne que si la page est ouverte.</p>
+      </div>`;
+  }
+
+  if(S.tab === "items"){
+    const list = C.items.map((it, i) => `<div class="row ${i === S.sel ? "on" : ""}">
+        <span>${esc(it.title)} <span class="muted">· ${esc(it.category)}</span></span>
+        <span class="acts"><button data-act="edit" data-i="${i}">Modifier</button><button data-act="del" data-i="${i}">Supprimer</button></span>
+      </div>`).join("") || '<p class="muted">Aucun contenu.</p>';
+    const it = C.items[S.sel];
+    const form = it ? `
+      <h3>Modifier le contenu</h3>
+      <label>Identifiant (unique, sans espace)<input data-item="${S.sel}" data-f="id" value="${esc(it.id)}"></label>
+      <label>Catégorie
+        <select data-item="${S.sel}" data-f="category">
+          <option value="film" ${it.category === "film" ? "selected" : ""}>Film</option>
+          <option value="serie" ${it.category === "serie" ? "selected" : ""}>Série</option>
+          <option value="doc" ${it.category === "doc" ? "selected" : ""}>Documentaire</option>
+        </select>
+      </label>
+      <label>Titre<input data-item="${S.sel}" data-f="title" value="${esc(it.title)}"></label>
+      <label>Infos courtes (ex. « Thriller · 1 h 42 »)<input data-item="${S.sel}" data-f="meta" value="${esc(it.meta)}"></label>
+      <label>Description<textarea data-item="${S.sel}" data-f="description">${esc(it.description)}</textarea></label>
+      <label>Couleur de l'affiche<input type="color" data-item="${S.sel}" data-f="color" value="${/^#[0-9a-f]{6}$/i.test(it.color) ? it.color : "#3b2f7a"}"></label>
+      <label>Durée (minutes)<input type="number" min="1" step="1" data-item="${S.sel}" data-f="duration" value="${it.duration ? Math.round(it.duration / 60) : ""}"></label>
+      <label>Lien vidéo (Internet Archive, https)<input data-item="${S.sel}" data-f="src" value="${esc(it.src)}"></label>
+      <p class="hint">La durée doit correspondre à la vraie durée du fichier, sinon la grille du direct sera décalée.</p>`
+      : '<p class="muted">Sélectionne un contenu à gauche, ou ajoute-en un.</p>';
+    v.innerHTML = `<div class="two">
+      <div class="card">
+        <h3>Contenus</h3>${list}
+        <div class="addrow"><button class="primary" data-act="add">+ Ajouter un contenu</button></div>
+      </div>
+      <div class="card">${form}</div>
+    </div>`;
+  }
+
+  if(S.tab === "set"){
+    const G = S.gh;
+    v.innerHTML = `<div class="card">
+      <h3>Enregistrer sur GitHub</h3>
+      <label>Propriétaire (ton pseudo GitHub)<input data-gh="owner" value="${esc(G.owner)}"></label>
+      <label>Nom du dépôt<input data-gh="repo" value="${esc(G.repo || "kinera")}"></label>
+      <label>Branche<input data-gh="branch" value="${esc(G.branch || "main")}"></label>
+      <label>Jeton d'accès (token)<input type="password" data-gh="token" value="${esc(G.token)}" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" data-gh="remember" ${G.remember ? "checked" : ""}> Garder le jeton sur cet appareil (à éviter sur un ordinateur partagé)</label>
+      <p class="hint">Crée un jeton « fine-grained » limité à ce seul dépôt, avec l'accès « Contents : lecture et écriture ». Ne le partage jamais.</p>
+    </div>
+    <div class="card">
+      <h3>Sans GitHub</h3>
+      <p class="muted">Utilise « Télécharger » pour récupérer catalogue.json, puis remplace le fichier dans ton dépôt.</p>
+    </div>`;
+  }
+}
+
+/* ---------- Saisie ---------- */
+function onField(e){
+  const t = e.target;
+  if(t.dataset.path){ setPath(S.cfg, t.dataset.path, t.value); dirty(); }
+  else if(t.dataset.gh){
+    S.gh[t.dataset.gh] = t.type === "checkbox" ? t.checked : t.value;
+    saveGh();
+  }
+  else if(t.dataset.item !== undefined){
+    const it = S.cfg.items[+t.dataset.item], f = t.dataset.f;
+    it[f] = f === "duration" ? Math.round(parseFloat(t.value || 0) * 60) : t.value;
+    dirty();
+  }
+}
+document.addEventListener("input", onField);
+document.addEventListener("change", e => {
+  if(e.target.id === "fileIn") return loadFile(e.target.files[0]);
+  onField(e);
+});
+
+/* ---------- Actions ---------- */
+document.addEventListener("click", e => {
+  const tabBtn = e.target.closest("[data-tab]");
+  if(tabBtn){ S.tab = tabBtn.dataset.tab; render(); return; }
+  const b = e.target.closest("[data-act]");
+  if(!b) return;
+  const act = b.dataset.act, i = +b.dataset.i, L = S.cfg.live;
+  if(act === "save") return save();
+  if(act === "export") return exportFile();
+  if(act === "check") return status(problems().join(" · ") || "Aucun problème détecté.", problems().length > 0);
+
+  if(act === "edit") S.sel = i;
+  if(act === "add"){
+    const id = "item-" + Date.now().toString(36);
+    S.cfg.items.push({ id, category: "film", title: "Nouveau titre", meta: "", description: "", color: "#3b2f7a", duration: 3600, src: "https://archive.org/download/VOTRE_ITEM/fichier.mp4" });
+    S.sel = S.cfg.items.length - 1;
+  }
+  if(act === "del"){
+    if(!confirm("Supprimer ce contenu de la liste et de la grille ?")) return;
+    const id = S.cfg.items[i].id;
+    S.cfg.items.splice(i, 1);
+    L.grille = L.grille.filter(x => x !== id);
+    S.sel = -1;
+  }
+  if(act === "slot"){ const id = $("#pick")?.value; if(id) L.grille.push(id); }
+  if(act === "unslot") L.grille.splice(i, 1);
+  if(act === "up" && i > 0){ const g = L.grille; [g[i-1], g[i]] = [g[i], g[i-1]]; }
+  if(act === "down" && i < L.grille.length - 1){ const g = L.grille; [g[i+1], g[i]] = [g[i], g[i+1]]; }
+  if(act !== "edit" && act !== "tab") dirty(); render();
+});
+
+/* ---------- Fichiers ---------- */
+function loadFile(file){
+  if(!file) return;
+  file.text().then(t => {
+    S.cfg = JSON.parse(t); S.sel = -1; S.dirty = false;
+    render(); status("Fichier chargé : " + file.name);
+  }).catch(() => status("Fichier invalide : vérifie que c'est un catalogue.json.", true));
+}
+function exportFile(){
+  const blob = new Blob([JSON.stringify(S.cfg, null, 2) + "\n"], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "catalogue.json"; a.click();
+  status("Fichier téléchargé : remplace catalogue.json dans ton dépôt.");
+}
+
+/* ---------- GitHub ---------- */
+async function save(){
+  const probs = problems();
+  if(probs.length && !confirm(probs.join("\n") + "\n\nEnregistrer quand même ?")) return;
+  const { owner, repo, branch, token } = S.gh;
+  if(!owner || !repo || !token) return status("Renseigne le propriétaire, le dépôt et le jeton dans Réglages GitHub.", true);
+  const br = branch || "main";
+  const api = `https://api.github.com/repos/${owner}/${repo}/contents/catalogue.json`;
+  const hdr = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" };
+  try{
+    status("Enregistrement en cours…");
+    const g = await fetch(`${api}?ref=${encodeURIComponent(br)}`, { headers: hdr });
+    if(!g.ok) throw new Error(`Lecture impossible (erreur ${g.status}). Vérifie le jeton et le nom du dépôt.`);
+    const sha = (await g.json()).sha;
+    const p = await fetch(api, { method: "PUT", headers: hdr, body: JSON.stringify({
+      message: "Mise à jour du catalogue", content: b64(JSON.stringify(S.cfg, null, 2) + "\n"), sha, branch: br
+    }) });
+    if(!p.ok) throw new Error(`Écriture refusée (erreur ${p.status}). Vérifie que le jeton a le droit d'écrire.`);
+    S.dirty = false;
+    status("Enregistré sur GitHub. Le site se met à jour en une à deux minutes.");
+  }catch(err){ status(err.message, true); }
+}
+
+/* ---------- Démarrage ---------- */
+fetch("catalogue.json").then(r => r.json()).then(d => { S.cfg = d; render(); })
+  .catch(() => { render(); status("Charge le fichier catalogue.json ou ouvre la page depuis ton dépôt en ligne."); });
+render();
+</script>
+</body>
+</html>

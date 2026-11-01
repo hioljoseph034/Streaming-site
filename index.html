@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kinera — Films, séries et direct</title>
+<style>
+:root{--bg:#0f0d1a;--surface:#1c1932;--line:#2e2a50;--text:#f1eefb;--muted:#a09bc4;--accent:#ffc857;--live:#ff4d6d;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{display:flex;align-items:center;gap:20px;padding:14px clamp(16px,4vw,48px);border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5;flex-wrap:wrap}
+.logo{font-weight:800;font-size:26px;letter-spacing:-.03em}
+.logo i{color:var(--live);font-style:normal}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav a{color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:99px}
+nav a:hover{color:var(--text);background:var(--surface)}
+main{max-width:1300px;margin:0 auto;padding:24px clamp(16px,4vw,48px) 110px}
+h2{font-size:22px;letter-spacing:-.02em;margin:40px 0 14px}
+.hidden{display:none!important}
+/* Direct */
+.frame{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+.frame iframe,.frame video{width:100%;height:100%;border:0;display:block}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;background:linear-gradient(150deg,#2a2350,#000)}
+.overlay p{margin:6px 0;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--live);color:#fff;font-weight:600;font-size:13px;padding:3px 10px;border-radius:6px;margin:0 0 10px}
+.pill.off{background:#4a4470}
+.now{margin:12px 0 0;font-size:18px;font-weight:600}
+.now span{color:var(--muted);font-weight:400;font-size:15px;display:block}
+.btn{background:var(--accent);color:#1c1932;border:0;border-radius:8px;padding:10px 18px;font-weight:600;font-size:16px}
+.tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:12px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line);z-index:6}
+.mode{background:none;border:0;color:var(--muted);padding:10px 32px;border-radius:99px;font-weight:600;font-size:16px;min-width:120px}
+.mode[aria-selected="true"]{background:var(--accent);color:#1c1932}
+.sched h3{font-size:16px;margin:18px 0 4px}
+.sched ul{list-style:none;padding:0;margin:0}
+.sched li{padding:8px 0;border-bottom:1px solid var(--line);color:var(--muted)}
+.sched li b{color:var(--text);margin-right:12px;font-variant-numeric:tabular-nums}
+/* VOD */
+.rail{display:flex;gap:14px;overflow-x:auto;padding-bottom:10px;scroll-snap-type:x proximity}
+.card{flex:none;width:170px;background:none;border:0;padding:0;text-align:left;scroll-snap-align:start}
+.poster{aspect-ratio:2/3;border-radius:10px;display:flex;align-items:flex-end;padding:12px;font-weight:700;font-size:18px;line-height:1.1;color:#fff;background:var(--c,#333)}
+.card:hover .poster{transform:translateY(-3px);transition:transform .15s}
+.card small{display:block;color:var(--muted);margin-top:6px;font-size:13px}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--live);border-radius:2px}
+dialog{border:0;border-radius:14px;padding:0;background:var(--surface);color:var(--text);width:min(960px,94vw)}
+dialog::backdrop{background:#000c}
+dialog .frame{border-radius:14px 14px 0 0}
+dialog video{width:100%;height:100%;display:block;background:#000}
+.dinfo{padding:14px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.dinfo p{margin:0;color:var(--muted);flex:1 1 300px}
+.btn.ghost{background:none;color:var(--text);border:1px solid var(--line)}
+.msg{padding:20px;color:var(--muted)}
+footer{text-align:center;color:var(--muted);font-size:13px;padding:24px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo" id="brand">Kinera<i>.</i></div>
+  <nav aria-label="Navigation">
+    <a href="#direct">Direct</a>
+    <a href="#films">Films</a>
+    <a href="#series">Séries</a>
+    <a href="#docs">Documentaires</a>
+  </nav>
+</header>
+
+<main>
+  <section id="direct">
+    <span class="pill off" id="livePill">HORS LIGNE</span>
+    <div class="frame" id="liveFrame"></div>
+    <p class="now" id="liveNow"></p>
+    <div id="liveSchedule" class="sched"></div>
+  </section>
+
+  <div id="vod" class="hidden">
+    <section id="films"><h2>Films</h2><div class="rail" data-cat="film"></div></section>
+    <section id="series"><h2>Séries</h2><div class="rail" data-cat="serie"></div></section>
+    <section id="docs"><h2>Documentaires</h2><div class="rail" data-cat="doc"></div></section>
+  </div>
+  <p class="msg hidden" id="empty">Aucun contenu pour le moment. Ajoute des entrées dans catalogue.json.</p>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="Navigation principale">
+  <button class="mode" role="tab" data-mode="direct" aria-selected="true">Direct</button>
+  <button class="mode" role="tab" data-mode="vod" aria-selected="false">TV</button>
+</nav>
+
+<dialog id="dlg" aria-label="Lecteur">
+  <div class="frame"><video id="vid" controls playsinline></video></div>
+  <div class="dinfo">
+    <p id="dDesc"></p>
+    <button class="btn ghost" id="dClose">Fermer</button>
+  </div>
+</dialog>
+
+<footer id="foot"></footer>
+
+<script>
+const $ = s => document.querySelector(s);
+let CFG = {}, items = {};
+const LS = "kinera-progress";
+const prog = JSON.parse(localStorage.getItem(LS) || "{}");
+
+fetch("catalogue.json").then(r => r.json()).then(init).catch(() => {
+  $("#empty").classList.remove("hidden");
+});
+
+function init(data){
+  CFG = data;
+  items = Object.fromEntries((data.items || []).map(i => [i.id, i]));
+  document.title = data.siteName + " — Films, séries et direct";
+  $("#brand").innerHTML = data.siteName.replace(/\.$/, "") + "<i>.</i>";
+  $("#foot").textContent = data.footer || "";
+  setupLive(data.live || {});
+  ["film","serie","doc"].forEach(cat => {
+    const rail = document.querySelector(`.rail[data-cat="${cat}"]`);
+    const list = (data.items || []).filter(i => i.category === cat);
+    if(!list.length) rail.parentElement.classList.add("hidden");
+    list.forEach(i => rail.append(card(i)));
+  });
+  if(!(data.items || []).length) $("#empty").classList.remove("hidden");
+}
+
+/* ---- Choix du mode ---- */
+function setMode(mode){
+  $("#direct").classList.toggle("hidden", mode !== "direct");
+  $("#vod").classList.toggle("hidden", mode !== "vod");
+  document.querySelectorAll(".mode").forEach(b =>
+    b.setAttribute("aria-selected", b.dataset.mode === mode));
+}
+document.querySelectorAll(".mode").forEach(b =>
+  b.addEventListener("click", () => setMode(b.dataset.mode)));
+document.querySelectorAll("nav a").forEach(a =>
+  a.addEventListener("click", () => setMode(a.getAttribute("href") === "#direct" ? "direct" : "vod")));
+
+/* Liste « À suivre » avec les heures de début */
+function renderSchedule(p, list){
+  const now = Date.now();
+  const cur = list[p.idx];
+  const startCur = new Date(now - p.offset * 1000);
+  const hm = d => d.toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"});
+  let t = cur.duration - p.offset;   // secondes restantes du programme en cours
+  let rows = "";
+  for(let n = 1; n <= 4; n++){
+    const k = (p.idx + n) % list.length;
+    rows += `<li><b>${hm(new Date(now + t * 1000))}</b>${escape(list[k].title)}</li>`;
+    t += list[k].duration;
+  }
+  $("#liveSchedule").innerHTML =
+    `<p class="now" style="margin:0"><b>En cours depuis ${hm(startCur)}</b></p><h3>À suivre</h3><ul>${rows}</ul>`;
+}
+
+/* ---- Direct ---- */
+function setupLive(live){
+  if(live.mode === "twitch" && live.twitchChannel){
+    setupTwitch(live);
+  } else {
+    setupKinera(live);
+  }
+}
+
+// Chaîne Kinera : une grille en boucle, calée sur l'horloge pour que tout le monde voie le même programme
+function setupKinera(live){
+  const list = (live.grille || []).map(id => items[id]).filter(i => i && i.src && i.duration);
+  if(!list.length){
+    $("#liveFrame").innerHTML = '<div class="overlay"><div><h2>Direct non configuré</h2><p>Ajoute des programmes dans « grille » (catalogue.json).</p></div></div>';
+    return;
+  }
+  const total = list.reduce((s, i) => s + i.duration, 0);
+  const vid = document.createElement("video");
+  vid.controls = true; vid.playsInline = true;
+  $("#liveFrame").innerHTML = "";
+  $("#liveFrame").append(vid);
+  const start = document.createElement("div");
+  start.className = "overlay";
+  start.innerHTML = `<div><button class="btn" id="go">Regarder le direct</button><p>Le direct démarre au programme en cours.</p></div>`;
+  $("#liveFrame").append(start);
+
+  let current = -1, started = false;
+  function position(){
+    const t = (Date.now() / 1000) % total;
+    let acc = 0;
+    for(let k = 0; k < list.length; k++){
+      if(t < acc + list[k].duration) return { idx: k, offset: t - acc };
+      acc += list[k].duration;
+    }
+    return { idx: 0, offset: 0 };
+  }
+  function sync(){
+    const p = position(), item = list[p.idx];
+    if(p.idx !== current){
+      current = p.idx;
+      vid.src = item.src;
+      vid.onloadedmetadata = () => { vid.currentTime = p.offset; vid.play().catch(()=>{}); };
+    } else if(vid.readyState >= 1 && Math.abs(vid.currentTime - p.offset) > 3){
+      vid.currentTime = p.offset;
+    }
+    $("#liveNow").innerHTML = `${escape(item.title)}<span>${escape(item.description || "")}</span>`;
+    renderSchedule(p, list);
+  }
+  $("#go").onclick = () => {
+    started = true;
+    start.remove();
+    sync();
+    setInterval(sync, 1000);
+  };
+  $("#livePill").textContent = "EN DIRECT";
+  $("#livePill").classList.remove("off");
+}
+
+// Option Twitch : un vrai direct depuis ton OBS
+function setupTwitch(live){
+  const parent = location.hostname || "localhost";
+  const ch = encodeURIComponent(live.twitchChannel);
+  $("#liveFrame").innerHTML = `<iframe src="https://player.twitch.tv/?channel=${ch}&parent=${parent}" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
+  $("#livePill").textContent = "DIRECT";
+  $("#livePill").classList.remove("off");
+  $("#liveNow").textContent = live.title || "";
+}
+
+/* ---- VOD ---- */
+function card(item){
+  const b = document.createElement("button");
+  b.className = "card";
+  b.style.setProperty("--c", item.color || "#3b2f7a");
+  const p = prog[item.id] || 0;
+  b.innerHTML = `<div class="poster">${escape(item.title)}</div>
+    <small>${escape(item.meta || "")}</small>
+    ${p > 0.02 ? `<div class="bar"><i style="width:${Math.round(p*100)}%"></i></div>` : ""}`;
+  b.onclick = () => openPlayer(item);
+  return b;
+}
+
+function openPlayer(item){
+  const v = $("#vid");
+  v.src = item.src;
+  $("#dDesc").textContent = item.description || item.title;
+  $("#dlg").showModal();
+  v.play().catch(()=>{});
+  v.onloadedmetadata = () => {
+    if(prog[item.id]) v.currentTime = prog[item.id] * v.duration;
+  };
+  v.ontimeupdate = () => {
+    if(v.duration){
+      prog[item.id] = v.currentTime / v.duration;
+      localStorage.setItem(LS, JSON.stringify(prog));
+    }
+  };
+  v.onerror = () => {
+    $("#dDesc").textContent = "Impossible de lire ce fichier. Vérifie l'URL dans catalogue.json.";
+  };
+}
+
+$("#dClose").onclick = () => { $("#vid").pause(); $("#dlg").close(); };
+$("#dlg").addEventListener("close", () => { $("#vid").pause(); $("#vid").removeAttribute("src"); $("#vid").load(); });
+
+function escape(s){
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+</script>
+</body>
+</html>
